@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>BARRA TEKNIK — Inventaris Online</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#667085;--line:#e5e7eb;--accent:#1f6feb;--danger:#d92d20;--ok:#039855;--warn:#b54708}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -61,7 +62,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 </section>
 <section id="backup" class="hidden">
 <div class="card"><h3>Backup & Export Data</h3><p class="muted">Simpan salinan data inventaris ke HP/komputer. File JSON dapat dipakai sebagai arsip lengkap, sedangkan CSV mudah dibuka di Excel/Google Sheets.</p>
-<div class="actions"><button class="primary" onclick="downloadJSON()">Download Backup JSON</button><button class="secondary" onclick="downloadCSV('barang')">Export Barang CSV</button><button class="secondary" onclick="downloadCSV('transaksi')">Export Transaksi CSV</button></div>
+<div class="actions"><button class="primary" onclick="downloadJSON()">Download Backup JSON</button><button class="secondary" onclick="downloadCSV('barang')">Export Barang CSV</button><button class="secondary" onclick="downloadCSV('transaksi')">Export Transaksi CSV</button><button class="primary" onclick="downloadXLSX()">Export Laporan Excel</button></div>
 </div>
 <div class="card"><h3>Isi Backup</h3><div class="muted">Backup JSON berisi daftar barang dan seluruh transaksi yang berhasil dimuat dari Supabase. Tidak berisi password atau Secret Key.</div></div>
 </section>
@@ -172,6 +173,94 @@ function downloadCSV(kind){
  else {headers=['id','created_at','tipe','barang_id','jumlah','harga','pekerjaan','pelanggan','keterangan','user_id'];rows=tx.map(x=>headers.map(h=>x[h]));}
  const csv='\ufeff'+[headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\r\n');downloadFile('barra-teknik-'+kind+'-'+new Date().toISOString().slice(0,10)+'.csv',csv,'text/csv;charset=utf-8');toast('File CSV berhasil dibuat.');
 }
+
+function downloadXLSX(){
+ const wb=XLSX.utils.book_new();
+ const today=new Date().toLocaleDateString('id-ID');
+ const totalStock=items.reduce((a,x)=>a+Number(x.stok||0),0);
+ const totalValue=items.reduce((a,x)=>a+Number(x.stok||0)*Number(x.harga_beli||0),0);
+ const low=items.filter(x=>Number(x.stok)<=Number(x.batas_minimum));
+
+ // Sheet 1: Dashboard
+ const dash=[
+  ['LAPORAN INVENTARIS BARRA TEKNIK'],
+  ['Tanggal laporan',today],
+  [],
+  ['Ringkasan','Nilai'],
+  ['Jenis barang',items.length],
+  ['Total stok',totalStock],
+  ['Nilai stok',totalValue],
+  ['Stok menipis',low.length]
+ ];
+ const wsDash=XLSX.utils.aoa_to_sheet(dash);
+ wsDash['!cols']=[{wch:28},{wch:20}];
+ XLSX.utils.book_append_sheet(wb,wsDash,'Dashboard');
+
+ // Sheet 2: Daftar Barang
+ const barangHeaders=['ID','Nama Barang','Kategori','Satuan','Stok','Batas Minimum','Harga Beli','Nilai Stok','Supplier','Dibuat'];
+ const barangRows=items.map(x=>[
+  x.id,x.nama,x.kategori,x.satuan,Number(x.stok||0),Number(x.batas_minimum||0),
+  Number(x.harga_beli||0),Number(x.stok||0)*Number(x.harga_beli||0),x.supplier||'',x.created_at||''
+ ]);
+ const wsBarang=XLSX.utils.aoa_to_sheet([barangHeaders,...barangRows]);
+ wsBarang['!cols']=[{wch:8},{wch:28},{wch:14},{wch:10},{wch:12},{wch:16},{wch:16},{wch:16},{wch:24},{wch:24}];
+ XLSX.utils.book_append_sheet(wb,wsBarang,'Daftar Barang');
+
+ // Sheet 3: Barang Masuk
+ const masuk=tx.filter(t=>t.tipe==='masuk');
+ const inHeaders=['ID','Tanggal','Barang','Jumlah','Satuan','Harga','Supplier/Keterangan','User ID'];
+ const inRows=masuk.map(t=>{
+   const it=items.find(i=>i.id===t.barang_id);
+   return [t.id,t.created_at||'',it?.nama||('#'+t.barang_id),Number(t.jumlah||0),it?.satuan||'',Number(t.harga||0),t.keterangan||'',t.user_id||''];
+ });
+ const wsIn=XLSX.utils.aoa_to_sheet([inHeaders,...inRows]);
+ wsIn['!cols']=[{wch:8},{wch:24},{wch:28},{wch:12},{wch:10},{wch:16},{wch:36},{wch:38}];
+ XLSX.utils.book_append_sheet(wb,wsIn,'Barang Masuk');
+
+ // Sheet 4: Barang Keluar
+ const keluar=tx.filter(t=>t.tipe==='keluar');
+ const outHeaders=['ID','Tanggal','Barang','Jumlah','Satuan','Nilai/Satuan','Pekerjaan','Pelanggan','Keterangan','User ID'];
+ const outRows=keluar.map(t=>{
+   const it=items.find(i=>i.id===t.barang_id);
+   return [t.id,t.created_at||'',it?.nama||('#'+t.barang_id),Number(t.jumlah||0),it?.satuan||'',Number(t.harga||0),
+           t.pekerjaan||'',t.pelanggan||'',t.keterangan||'',t.user_id||''];
+ });
+ const wsOut=XLSX.utils.aoa_to_sheet([outHeaders,...outRows]);
+ wsOut['!cols']=[{wch:8},{wch:24},{wch:28},{wch:12},{wch:10},{wch:16},{wch:30},{wch:24},{wch:36},{wch:38}];
+ XLSX.utils.book_append_sheet(wb,wsOut,'Barang Keluar');
+
+ // Sheet 5: Ringkasan Kategori
+ const cats={};
+ items.forEach(x=>{
+   const k=x.kategori||'Lainnya';
+   if(!cats[k])cats[k]={items:0,stock:0,value:0};
+   cats[k].items++;
+   cats[k].stock+=Number(x.stok||0);
+   cats[k].value+=Number(x.stok||0)*Number(x.harga_beli||0);
+ });
+ const catRows=Object.entries(cats).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>[k,v.items,v.stock,v.value]);
+ const wsCat=XLSX.utils.aoa_to_sheet([['Kategori','Jenis Barang','Total Stok','Nilai Stok'],...catRows]);
+ wsCat['!cols']=[{wch:18},{wch:16},{wch:16},{wch:18}];
+ XLSX.utils.book_append_sheet(wb,wsCat,'Ringkasan Kategori');
+
+ // Sheet 6: Ringkasan Transaksi
+ const totalInQty=masuk.reduce((a,t)=>a+Number(t.jumlah||0),0);
+ const totalOutQty=keluar.reduce((a,t)=>a+Number(t.jumlah||0),0);
+ const totalInValue=masuk.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0);
+ const totalOutValue=keluar.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0);
+ const wsTx=XLSX.utils.aoa_to_sheet([
+   ['Jenis','Jumlah Transaksi','Total Qty','Nilai'],
+   ['MASUK',masuk.length,totalInQty,totalInValue],
+   ['KELUAR',keluar.length,totalOutQty,totalOutValue]
+ ]);
+ wsTx['!cols']=[{wch:18},{wch:20},{wch:16},{wch:18}];
+ XLSX.utils.book_append_sheet(wb,wsTx,'Ringkasan Transaksi');
+
+ const filename='Laporan_BARRA_TEKNIK_'+new Date().toISOString().slice(0,10)+'.xlsx';
+ XLSX.writeFile(wb,filename);
+ toast('Laporan Excel berhasil dibuat.');
+}
+
 async function init(){
  const {data:{session}}=await sb.auth.getSession();
  if(session){const {data:profile}=await sb.from('profiles').select('id,nama,role').eq('id',session.user.id).single();if(profile?.role==='admin'){currentProfile=profile;$('loginScreen').style.display='none';$('userBar').style.display='block';$('who').textContent=profile.nama+' (ADMIN)';$('app').classList.remove('hidden');try{await loadData()}catch(e){toast(e.message)}return}}
