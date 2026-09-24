@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BARRA TEKNIK — Inventaris Online</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#667085;--line:#e5e7eb;--accent:#1f6feb;--danger:#d92d20;--ok:#039855;--warn:#b54708}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{background:#111827;color:#fff;padding:18px 16px;position:sticky;top:0;z-index:5}header h1{margin:0;font-size:21px}header p{margin:5px 0 0;color:#cbd5e1;font-size:13px}
+main{max-width:1000px;margin:auto;padding:14px}.tabs{display:flex;gap:8px;overflow:auto;margin-bottom:12px}.tab{border:1px solid var(--line);background:#fff;padding:10px 14px;border-radius:10px;white-space:nowrap}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:12px;box-shadow:0 1px 2px #00000008}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}@media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat b{display:block;font-size:24px;margin-top:5px}.muted{color:var(--muted);font-size:12px}label{font-size:12px;color:var(--muted);display:block;margin:10px 0 5px}input,select,button{font:inherit}input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;background:#fff}button{border:0;border-radius:9px;padding:11px 14px;cursor:pointer}.primary{background:var(--accent);color:#fff}.danger{background:#fee4e2;color:var(--danger)}.secondary{background:#eef2f6;color:#344054}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--muted)}.low{color:var(--danger);font-weight:bold}.ok{color:var(--ok);font-weight:bold}.hidden{display:none}.search{margin-bottom:10px}.empty{padding:20px;text-align:center;color:var(--muted)}.smallbtn{padding:7px 9px;font-size:12px}.right{display:flex;justify-content:flex-end;align-items:center;gap:8px}.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#111827;color:#fff;padding:12px 16px;border-radius:10px;z-index:200;display:none;max-width:90%;text-align:center}.loading{opacity:.65;pointer-events:none}.status{font-size:12px;padding:8px 10px;border-radius:8px;background:#eef2f6;color:#344054}.status.ok{background:#ecfdf3}.status.err{background:#fef3f2;color:#b42318}
+#loginScreen{position:fixed;inset:0;background:#111827;color:#fff;display:flex;align-items:center;justify-content:center;z-index:99;padding:20px}#loginBox{background:#fff;color:#17202a;max-width:400px;width:100%;padding:24px;border-radius:16px}.logo{font-size:30px}
+@media(max-width:600px){table{min-width:700px}.tableWrap{overflow:auto}.grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header><h1>⚙️ BARRA TEKNIK</h1><p>Inventaris barang • online Supabase</p></header>
+<div id="userBar" style="display:none;max-width:1000px;margin:0 auto;padding:8px 14px;text-align:right;font-size:12px;color:#667085">Login sebagai <b id="who"></b> · <button class="secondary smallbtn" onclick="logout()">Keluar</button></div>
+<main id="app" class="hidden">
+<div class="tabs">
+<button class="tab active" onclick="showTab('dash',this)">Dashboard</button>
+<button class="tab" onclick="showTab('stock',this)">Stok Barang</button>
+<button class="tab" onclick="showTab('in',this)">Barang Masuk</button>
+<button class="tab" onclick="showTab('out',this)">Barang Keluar</button>
+<button class="tab" onclick="showTab('report',this)">Laporan</button>
+<button class="tab" onclick="showTab('backup',this)">Backup</button>
+</div>
+<section id="dash">
+<div class="grid">
+<div class="card stat"><span class="muted">Jenis barang</span><b id="sItems">0</b></div>
+<div class="card stat"><span class="muted">Total stok</span><b id="sStock">0</b></div>
+<div class="card stat"><span class="muted">Nilai stok</span><b id="sValue">Rp0</b></div>
+<div class="card stat"><span class="muted">Stok menipis</span><b id="sLow">0</b></div>
+</div>
+<div class="card"><h3>Stok Menipis</h3><div id="lowList"></div></div>
+<div class="card"><h3>Transaksi Terakhir</h3><div class="tableWrap" id="recent"></div></div>
+</section>
+<section id="stock" class="hidden">
+<div class="card"><h3>Daftar Stok</h3><input class="search" id="search" placeholder="Cari lampu, kapasitor, freon..." oninput="renderStock()"><div class="tableWrap" id="stockTable"></div></div>
+<div class="card adminOnly"><h3>Tambah Barang Baru</h3>
+<div class="grid"><div><label>Nama barang</label><input id="newName" placeholder="Kapasitor 35µF"></div><div><label>Kategori</label><select id="newCat"><option>AC</option><option>Listrik</option><option>Pompa</option><option>Plumbing</option><option>Lainnya</option></select></div><div><label>Satuan</label><select id="newUnit"><option>pcs</option><option>meter</option><option>kg</option><option>liter</option><option>set</option></select></div><div><label>Batas stok minimum</label><input id="newMin" type="number" min="0" step="1" value="2"></div></div>
+<div class="grid"><div><label>Harga beli awal</label><input id="newPrice" type="number" min="0" step="1" value="0"></div><div><label>Supplier</label><input id="newSupplier" placeholder="Nama toko / supplier"></div></div>
+<div class="actions"><button class="primary" onclick="addItem()">Tambah Barang</button></div></div>
+</section>
+<section id="in" class="hidden"><div class="card"><h3>Catat Barang Masuk</h3><label>Barang</label><select id="inItem"></select><div class="grid"><div><label>Jumlah</label><input id="inQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Harga beli per satuan</label><input id="inPrice" type="number" min="0" step="1" value="0"></div></div><label>Supplier / toko</label><input id="inSupplier" placeholder="Nama toko"><label>Keterangan</label><input id="inNote" placeholder="Nota / pembelian stok"><div class="actions"><button class="primary" onclick="stockIn()">Simpan Barang Masuk</button></div></div></section>
+<section id="out" class="hidden"><div class="card"><h3>Catat Barang Keluar</h3><label>Barang</label><select id="outItem"></select><div class="grid"><div><label>Jumlah</label><input id="outQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Nilai jual / pemakaian per satuan</label><input id="outPrice" type="number" min="0" step="1" value="0"></div></div><label>Digunakan untuk</label><input id="outJob" placeholder="Servis AC rumah / proyek"><label>Nama pelanggan</label><input id="outCustomer" placeholder="Opsional"><label>Keterangan</label><input id="outNote" placeholder="Opsional"><div class="actions"><button class="primary" onclick="stockOut()">Simpan Barang Keluar</button></div></div></section>
+<section id="report" class="hidden">
+<div class="grid">
+<div class="card stat"><span class="muted">Jenis barang</span><b id="rItems">0</b></div>
+<div class="card stat"><span class="muted">Total stok</span><b id="rStock">0</b></div>
+<div class="card stat"><span class="muted">Nilai stok</span><b id="rValue">Rp0</b></div>
+<div class="card stat"><span class="muted">Stok menipis</span><b id="rLow">0</b></div>
+</div>
+<div class="card"><h3>Stok per Kategori</h3><div class="tableWrap" id="categoryReport"></div></div>
+<div class="card"><h3>Daftar Stok</h3><div class="tableWrap" id="reportStock"></div></div>
+<div class="card"><h3>Ringkasan Transaksi</h3><div class="tableWrap" id="txReport"></div></div>
+</section>
+<section id="backup" class="hidden">
+<div class="card"><h3>Backup & Export Data</h3><p class="muted">Simpan salinan data inventaris ke HP/komputer. File JSON dapat dipakai sebagai arsip lengkap, sedangkan CSV mudah dibuka di Excel/Google Sheets.</p>
+<div class="actions"><button class="primary" onclick="downloadJSON()">Download Backup JSON</button><button class="secondary" onclick="downloadCSV('barang')">Export Barang CSV</button><button class="secondary" onclick="downloadCSV('transaksi')">Export Transaksi CSV</button></div>
+</div>
+<div class="card"><h3>Isi Backup</h3><div class="muted">Backup JSON berisi daftar barang dan seluruh transaksi yang berhasil dimuat dari Supabase. Tidak berisi password atau Secret Key.</div></div>
+</section>
+</main>
+<div id="loginScreen"><div id="loginBox"><div class="logo">⚙️</div><h2 style="margin:8px 0 4px">BARRA TEKNIK</h2><p class="muted">Login Admin — terhubung ke Supabase</p><label>Email</label><input id="loginEmail" type="email" autocomplete="username" placeholder="email admin"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="password"><div class="actions"><button class="primary" style="width:100%" onclick="login()">Masuk</button></div><div id="loginStatus" class="status" style="margin-top:12px">Belum login.</div><p class="muted" style="margin-bottom:0">Gunakan akun Admin Supabase yang sudah dibuat. Jangan masukkan Secret Key di sini.</p></div></div>
+<div id="toast" class="toast"></div>
+<script>
+const SUPABASE_URL='https://dcxbzqshnkjfsqrhctzk.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_iHqk1Dy_izHqvxNNm9a-tQ_OL7gT1yr';
+const {createClient}=supabase;
+const sb=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+let items=[],tx=[],profiles=[],currentProfile=null;
+const $=id=>document.getElementById(id);
+function toast(msg){const t=$('toast');t.textContent=msg;t.style.display='block';clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.style.display='none',3000)}
+function setLoginStatus(msg,err=false){$('loginStatus').textContent=msg;$('loginStatus').className='status '+(err?'err':'')}
+function rupiah(n){return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(Number(n)||0)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function showTab(id,el){document.querySelectorAll('main section').forEach(x=>x.classList.add('hidden'));$(id).classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderAll()}
+async function login(){
+ const email=$('loginEmail').value.trim(),password=$('loginPassword').value;
+ if(!email||!password){setLoginStatus('Email dan password wajib diisi.',true);return}
+ setLoginStatus('Memeriksa akun...');
+ const {data,error}=await sb.auth.signInWithPassword({email,password});
+ if(error){setLoginStatus(error.message,true);return}
+ const user=data.user;
+ const {data:profile,error:pe}=await sb.from('profiles').select('id,nama,role').eq('id',user.id).single();
+ if(pe||!profile){await sb.auth.signOut();setLoginStatus('Akun login belum memiliki profil di tabel profiles.',true);return}
+ if(profile.role!=='admin'){await sb.auth.signOut();setLoginStatus('Akun ini bukan Admin.',true);return}
+ currentProfile=profile;$('loginScreen').style.display='none';$('userBar').style.display='block';$('who').textContent=profile.nama+' (ADMIN)';$('app').classList.remove('hidden');
+ document.querySelectorAll('.adminOnly').forEach(x=>x.style.display='');
+ await loadData();toast('Login berhasil.');
+}
+async function logout(){await sb.auth.signOut();currentProfile=null;items=[];tx=[];$('app').classList.add('hidden');$('userBar').style.display='none';$('loginScreen').style.display='flex';setLoginStatus('Sudah keluar.');}
+async function loadData(){
+ const [bi,tr,pr]=await Promise.all([
+  sb.from('barang').select('*').order('nama'),
+  sb.from('transaksi').select('*').order('created_at',{ascending:false}),
+  sb.from('profiles').select('id,nama,role')
+ ]);
+ if(bi.error)throw bi.error;if(tr.error)throw tr.error;
+ items=bi.data||[];tx=tr.data||[];profiles=pr.data||[];renderAll();
+}
+function renderAll(){renderDashboard();renderStock();fillSelects();renderReport()}
+function renderDashboard(){
+ $('sItems').textContent=items.length;$('sStock').textContent=items.reduce((a,x)=>a+Number(x.stok||0),0);$('sValue').textContent=rupiah(items.reduce((a,x)=>a+Number(x.stok||0)*Number(x.harga_beli||0),0));
+ const low=items.filter(x=>Number(x.stok)<=Number(x.batas_minimum));$('sLow').textContent=low.length;
+ $('lowList').innerHTML=low.length?'<div class="tableWrap"><table><tr><th>Barang</th><th>Stok</th><th>Minimum</th></tr>'+low.map(x=>`<tr><td>${esc(x.nama)}</td><td class="low">${x.stok} ${esc(x.satuan)}</td><td>${x.batas_minimum}</td></tr>`).join('')+'</table></div>':'<div class="empty">Tidak ada stok yang menipis.</div>';
+ const pmap=Object.fromEntries(profiles.map(p=>[p.id,p.nama]));
+ $('recent').innerHTML=tx.length?'<table><tr><th>Tanggal</th><th>User</th><th>Jenis</th><th>Barang</th><th>Jumlah</th><th>Keterangan</th></tr>'+tx.slice(0,12).map(t=>{const it=items.find(i=>i.id===t.barang_id);return `<tr><td>${new Date(t.created_at).toLocaleString('id-ID')}</td><td>${esc(pmap[t.user_id]||'-')}</td><td>${t.tipe==='masuk'?'MASUK':'KELUAR'}</td><td>${esc(it?.nama||('#'+t.barang_id))}</td><td>${t.jumlah} ${esc(it?.satuan||'')}</td><td>${esc([t.pekerjaan,t.pelanggan,t.keterangan].filter(Boolean).join(' | '))}</td></tr>`}).join('')+'</table>':'<div class="empty">Belum ada transaksi.</div>';
+}
+function renderStock(){
+ const q=($('search')?.value||'').toLowerCase();const arr=items.filter(x=>(x.nama+' '+x.kategori+' '+(x.supplier||'')).toLowerCase().includes(q));
+ $('stockTable').innerHTML=arr.length?'<table><tr><th>Barang</th><th>Kategori</th><th>Stok</th><th>Min</th><th>Harga beli</th><th>Supplier</th><th>Aksi</th></tr>'+arr.map(x=>`<tr><td>${esc(x.nama)}</td><td>${esc(x.kategori)}</td><td class="${Number(x.stok)<=Number(x.batas_minimum)?'low':'ok'}">${x.stok} ${esc(x.satuan)}</td><td>${x.batas_minimum}</td><td>${rupiah(x.harga_beli)}</td><td>${esc(x.supplier||'-')}</td><td><button class="secondary smallbtn" onclick="editItem(${x.id})">Edit</button> <button class="danger smallbtn" onclick="deleteItem(${x.id})">Hapus</button></td></tr>`).join('')+'</table>':'<div class="empty">Belum ada barang.</div>';
+}
+function fillSelects(){
+ const opts='<option value="">Pilih barang</option>'+items.map(x=>`<option value="${x.id}">${esc(x.nama)} — stok ${x.stok} ${esc(x.satuan)}</option>`).join('');$('inItem').innerHTML=opts;$('outItem').innerHTML=opts;
+}
+async function addItem(){
+ const nama=$('newName').value.trim(),kategori=$('newCat').value,satuan=$('newUnit').value,batas=Number($('newMin').value),harga=Number($('newPrice').value)||0,supplier=$('newSupplier').value.trim()||null;
+ if(!nama||!Number.isFinite(batas)||batas<0){toast('Nama dan batas minimum harus benar.');return}
+ const {error}=await sb.from('barang').insert({nama,kategori,satuan,batas_minimum:batas,harga_beli:harga,supplier});
+ if(error){toast(error.message);return}await loadData();$('newName').value='';$('newMin').value=2;$('newPrice').value=0;$('newSupplier').value='';toast('Barang berhasil ditambahkan.');
+}
+async function editItem(id){
+ const it=items.find(x=>x.id===id);if(!it)return;
+ const batas=prompt(`Batas minimum untuk "${it.nama}" saat ini ${it.batas_minimum} ${it.satuan}.\nMasukkan batas minimum baru:`,it.batas_minimum);if(batas===null)return;
+ const num=Number(batas);if(!Number.isFinite(num)||num<0){toast('Batas minimum tidak valid.');return}
+ const nama=prompt('Nama barang:',it.nama);if(nama===null||!nama.trim())return;
+ const supplier=prompt('Supplier:',it.supplier||'');if(supplier===null)return;
+ const harga=prompt('Harga beli saat ini:',it.harga_beli);if(harga===null)return;const h=Number(harga);if(!Number.isFinite(h)||h<0){toast('Harga tidak valid.');return}
+ const {error}=await sb.from('barang').update({nama:nama.trim(),batas_minimum:num,supplier:supplier.trim()||null,harga_beli:h}).eq('id',id);if(error){toast(error.message);return}await loadData();toast('Data barang diperbarui.');
+}
+async function deleteItem(id){
+ const it=items.find(x=>x.id===id);if(!it)return;if(!confirm(`Hapus "${it.nama}"? Jika barang sudah memiliki riwayat transaksi, database mungkin menolak penghapusan.`))return;
+ const {error}=await sb.from('barang').delete().eq('id',id);if(error){toast('Tidak bisa dihapus: '+error.message);return}await loadData();toast('Barang dihapus.');
+}
+async function catat(tipe){
+ const id=Number($(tipe==='masuk'?'inItem':'outItem').value),q=Number($(tipe==='masuk'?'inQty':'outQty').value),p=Number($(tipe==='masuk'?'inPrice':'outPrice').value)||0;
+ if(!id||!Number.isFinite(q)||q<=0){toast('Pilih barang dan jumlah yang benar.');return}
+ let args={p_barang_id:id,p_tipe:tipe,p_jumlah:q,p_harga:p,p_pekerjaan:null,p_pelanggan:null,p_keterangan:null};
+ if(tipe==='masuk'){const s=$('inSupplier').value.trim(),n=$('inNote').value.trim();args.p_keterangan=[s?'Supplier: '+s:'',n].filter(Boolean).join(' | ')||null}
+ else {args.p_pekerjaan=$('outJob').value.trim()||null;args.p_pelanggan=$('outCustomer').value.trim()||null;args.p_keterangan=$('outNote').value.trim()||null}
+ const {error}=await sb.rpc('catat_transaksi',args);if(error){toast(error.message);return}await loadData();
+ if(tipe==='masuk'){$('inQty').value=1;$('inPrice').value=0;$('inSupplier').value='';$('inNote').value=''}else{$('outQty').value=1;$('outPrice').value=0;$('outJob').value='';$('outCustomer').value='';$('outNote').value=''}
+ toast(tipe==='masuk'?'Barang masuk tersimpan.':'Barang keluar tersimpan.');
+}
+function stockIn(){return catat('masuk')}function stockOut(){return catat('keluar')}
+
+function renderReport(){
+ const totalStock=items.reduce((a,x)=>a+Number(x.stok||0),0), totalValue=items.reduce((a,x)=>a+Number(x.stok||0)*Number(x.harga_beli||0),0), low=items.filter(x=>Number(x.stok)<=Number(x.batas_minimum));
+ $('rItems').textContent=items.length; $('rStock').textContent=totalStock; $('rValue').textContent=rupiah(totalValue); $('rLow').textContent=low.length;
+ const cats={}; items.forEach(x=>{const k=x.kategori||'Lainnya'; if(!cats[k])cats[k]={items:0,stock:0,value:0}; cats[k].items++;cats[k].stock+=Number(x.stok||0);cats[k].value+=Number(x.stok||0)*Number(x.harga_beli||0)});
+ $('categoryReport').innerHTML='<table><tr><th>Kategori</th><th>Jenis</th><th>Total stok</th><th>Nilai stok</th></tr>'+Object.entries(cats).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v.items}</td><td>${v.stock}</td><td>${rupiah(v.value)}</td></tr>`).join('')+'</table>';
+ $('reportStock').innerHTML='<table><tr><th>Barang</th><th>Kategori</th><th>Stok</th><th>Minimum</th><th>Harga beli</th><th>Nilai stok</th><th>Supplier</th></tr>'+items.map(x=>`<tr><td>${esc(x.nama)}</td><td>${esc(x.kategori)}</td><td class="${Number(x.stok)<=Number(x.batas_minimum)?'low':'ok'}">${x.stok} ${esc(x.satuan)}</td><td>${x.batas_minimum} ${esc(x.satuan)}</td><td>${rupiah(x.harga_beli)}</td><td>${rupiah(Number(x.stok||0)*Number(x.harga_beli||0))}</td><td>${esc(x.supplier||'-')}</td></tr>`).join('')+'</table>';
+ const masuk=tx.filter(t=>t.tipe==='masuk'), keluar=tx.filter(t=>t.tipe==='keluar');
+ const nilaiMasuk=masuk.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0), nilaiKeluar=keluar.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0);
+ $('txReport').innerHTML='<table><tr><th>Jenis</th><th>Jumlah transaksi</th><th>Total qty</th><th>Nilai</th></tr>'+`<tr><td>MASUK</td><td>${masuk.length}</td><td>${masuk.reduce((a,t)=>a+Number(t.jumlah||0),0)}</td><td>${rupiah(nilaiMasuk)}</td></tr><tr><td>KELUAR</td><td>${keluar.length}</td><td>${keluar.reduce((a,t)=>a+Number(t.jumlah||0),0)}</td><td>${rupiah(nilaiKeluar)}</td></tr></table>`;
+}
+function csvEscape(v){const s=String(v??'');return '"'+s.replace(/"/g,'""')+'"'}
+function downloadFile(name,content,type){const blob=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function downloadJSON(){
+ const payload={backup_version:1,exported_at:new Date().toISOString(),app:'BARRA TEKNIK',barang:items,transaksi:tx};
+ downloadFile('barra-teknik-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json');toast('Backup JSON berhasil dibuat.');
+}
+function downloadCSV(kind){
+ let rows,headers;
+ if(kind==='barang'){headers=['id','nama','kategori','satuan','stok','batas_minimum','harga_beli','supplier','created_at'];rows=items.map(x=>headers.map(h=>x[h]));}
+ else {headers=['id','created_at','tipe','barang_id','jumlah','harga','pekerjaan','pelanggan','keterangan','user_id'];rows=tx.map(x=>headers.map(h=>x[h]));}
+ const csv='\ufeff'+[headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\r\n');downloadFile('barra-teknik-'+kind+'-'+new Date().toISOString().slice(0,10)+'.csv',csv,'text/csv;charset=utf-8');toast('File CSV berhasil dibuat.');
+}
+async function init(){
+ const {data:{session}}=await sb.auth.getSession();
+ if(session){const {data:profile}=await sb.from('profiles').select('id,nama,role').eq('id',session.user.id).single();if(profile?.role==='admin'){currentProfile=profile;$('loginScreen').style.display='none';$('userBar').style.display='block';$('who').textContent=profile.nama+' (ADMIN)';$('app').classList.remove('hidden');try{await loadData()}catch(e){toast(e.message)}return}}
+}
+sb.auth.onAuthStateChange(async(event,session)=>{if(event==='SIGNED_OUT'){currentProfile=null;$('app').classList.add('hidden');$('userBar').style.display='none';$('loginScreen').style.display='flex'}});
+init();
+</script>
+</body></html>
