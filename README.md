@@ -1,1 +1,1 @@
-# barra-teknik
+# BARRA TEKNIK
