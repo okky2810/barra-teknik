@@ -50,6 +50,17 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;p
 <section id="in" class="hidden"><div class="card"><h3>Catat Barang Masuk</h3><label>Barang</label><select id="inItem"></select><div class="grid"><div><label>Jumlah</label><input id="inQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Harga beli per satuan</label><input id="inPrice" type="number" min="0" step="1" value="0"></div></div><label>Supplier / toko</label><input id="inSupplier" placeholder="Nama toko"><label>Keterangan</label><input id="inNote" placeholder="Nota / pembelian stok"><div class="actions"><button class="primary" onclick="stockIn()">Simpan Barang Masuk</button></div></div></section>
 <section id="out" class="hidden"><div class="card"><h3>Catat Barang Keluar</h3><label>Barang</label><select id="outItem"></select><div class="grid"><div><label>Jumlah</label><input id="outQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Nilai jual / pemakaian per satuan</label><input id="outPrice" type="number" min="0" step="1" value="0"></div></div><label>Digunakan untuk</label><input id="outJob" placeholder="Servis AC rumah / proyek"><label>Nama pelanggan</label><input id="outCustomer" placeholder="Opsional"><label>Keterangan</label><input id="outNote" placeholder="Opsional"><div class="actions"><button class="primary" onclick="stockOut()">Simpan Barang Keluar</button></div></div></section>
 <section id="report" class="hidden">
+ <div class="card">
+<h3>Filter Periode Laporan</h3>
+<div class="grid">
+<div><label>Tanggal mulai</label><input id="reportStart" type="date"></div>
+<div><label>Tanggal akhir</label><input id="reportEnd" type="date"></div>
+</div>
+<div class="actions">
+<button class="primary" onclick="applyReportFilter()">Tampilkan Laporan</button>
+<button class="secondary" onclick="resetReportFilter()">Reset</button>
+</div>
+</div>
 <div class="grid">
 <div class="card stat"><span class="muted">Jenis barang</span><b id="rItems">0</b></div>
 <div class="card stat"><span class="muted">Total stok</span><b id="rStock">0</b></div>
@@ -151,13 +162,41 @@ async function catat(tipe){
 }
 function stockIn(){return catat('masuk')}function stockOut(){return catat('keluar')}
 
-function renderReport(){
+function getReportTx(){
+  const start=$('reportStart')?.value;
+  const end=$('reportEnd')?.value;
+  if(!start && !end)return tx;
+  return tx.filter(t=>{
+    const d=new Date(t.created_at);
+    if(start&&d<new Date(start+'T00:00:00'))return false;
+    if(end&&d>new Date(end+'T23:59:59.999'))return false;
+    return true;
+  });
+}
+
+function applyReportFilter(){
+  const s=$('reportStart').value;
+  const e=$('reportEnd').value;
+  if(s&&e&&s>e){
+    toast('Tanggal mulai tidak boleh setelah tanggal akhir.');
+    return;
+  }
+  renderReport();
+}
+
+function resetReportFilter(){
+  $('reportStart').value='';
+  $('reportEnd').value='';
+  renderReport();
+}
+ function renderReport(){
  const totalStock=items.reduce((a,x)=>a+Number(x.stok||0),0), totalValue=items.reduce((a,x)=>a+Number(x.stok||0)*Number(x.harga_beli||0),0), low=items.filter(x=>Number(x.stok)<=Number(x.batas_minimum));
  $('rItems').textContent=items.length; $('rStock').textContent=totalStock; $('rValue').textContent=rupiah(totalValue); $('rLow').textContent=low.length;
  const cats={}; items.forEach(x=>{const k=x.kategori||'Lainnya'; if(!cats[k])cats[k]={items:0,stock:0,value:0}; cats[k].items++;cats[k].stock+=Number(x.stok||0);cats[k].value+=Number(x.stok||0)*Number(x.harga_beli||0)});
  $('categoryReport').innerHTML='<table><tr><th>Kategori</th><th>Jenis</th><th>Total stok</th><th>Nilai stok</th></tr>'+Object.entries(cats).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v.items}</td><td>${v.stock}</td><td>${rupiah(v.value)}</td></tr>`).join('')+'</table>';
  $('reportStock').innerHTML='<table><tr><th>Barang</th><th>Kategori</th><th>Stok</th><th>Minimum</th><th>Harga beli</th><th>Nilai stok</th><th>Supplier</th></tr>'+items.map(x=>`<tr><td>${esc(x.nama)}</td><td>${esc(x.kategori)}</td><td class="${Number(x.stok)<=Number(x.batas_minimum)?'low':'ok'}">${x.stok} ${esc(x.satuan)}</td><td>${x.batas_minimum} ${esc(x.satuan)}</td><td>${rupiah(x.harga_beli)}</td><td>${rupiah(Number(x.stok||0)*Number(x.harga_beli||0))}</td><td>${esc(x.supplier||'-')}</td></tr>`).join('')+'</table>';
- const masuk=tx.filter(t=>t.tipe==='masuk'), keluar=tx.filter(t=>t.tipe==='keluar');
+const reportTx=getReportTx();
+const masuk=reportTx.filter(t=>t.tipe==='masuk'), keluar=reportTx.filter(t=>t.tipe==='keluar');
  const nilaiMasuk=masuk.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0), nilaiKeluar=keluar.reduce((a,t)=>a+Number(t.jumlah||0)*Number(t.harga||0),0);
  $('txReport').innerHTML='<table><tr><th>Jenis</th><th>Jumlah transaksi</th><th>Total qty</th><th>Nilai</th></tr>'+`<tr><td>MASUK</td><td>${masuk.length}</td><td>${masuk.reduce((a,t)=>a+Number(t.jumlah||0),0)}</td><td>${rupiah(nilaiMasuk)}</td></tr><tr><td>KELUAR</td><td>${keluar.length}</td><td>${keluar.reduce((a,t)=>a+Number(t.jumlah||0),0)}</td><td>${rupiah(nilaiKeluar)}</td></tr></table>`;
 }
@@ -180,6 +219,7 @@ function downloadXLSX(){
  const totalStock=items.reduce((a,x)=>a+Number(x.stok||0),0);
  const totalValue=items.reduce((a,x)=>a+Number(x.stok||0)*Number(x.harga_beli||0),0);
  const low=items.filter(x=>Number(x.stok)<=Number(x.batas_minimum));
+ const reportTx=getReportTx();
 
  // Sheet 1: Dashboard
  const dash=[
@@ -207,7 +247,7 @@ function downloadXLSX(){
  XLSX.utils.book_append_sheet(wb,wsBarang,'Daftar Barang');
 
  // Sheet 3: Barang Masuk
- const masuk=tx.filter(t=>t.tipe==='masuk');
+ const masuk=reportTx.filter(t=>t.tipe==='masuk');
  const inHeaders=['ID','Tanggal','Barang','Jumlah','Satuan','Harga','Supplier/Keterangan','User ID'];
  const inRows=masuk.map(t=>{
    const it=items.find(i=>i.id===t.barang_id);
@@ -218,7 +258,7 @@ function downloadXLSX(){
  XLSX.utils.book_append_sheet(wb,wsIn,'Barang Masuk');
 
  // Sheet 4: Barang Keluar
- const keluar=tx.filter(t=>t.tipe==='keluar');
+ const keluar=reportTx.filter(t=>t.tipe==='keluar');
  const outHeaders=['ID','Tanggal','Barang','Jumlah','Satuan','Nilai/Satuan','Pekerjaan','Pelanggan','Keterangan','User ID'];
  const outRows=keluar.map(t=>{
    const it=items.find(i=>i.id===t.barang_id);
